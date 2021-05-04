@@ -1,8 +1,10 @@
 #pragma once
 
+#include "lyra/lyra.hpp"
 #include "rtklib.h"
 
 #include <filesystem>
+#include <regex>
 #include <vector>
 
 namespace {
@@ -171,7 +173,53 @@ namespace rinex2rtcm3 {
 
 			return dst;
 		}
+
+		Parameters(int argc, char** argv) {
+			bool show_help = false;
+			auto cli = 
+				lyra::help(show_help)
+				| lyra::opt([&](std::string type_string) { StringToEnum(std::move(type_string)); }, "messages type")
+				["--type"]
+				("Message types to output").required()
+				| lyra::opt(message_set, "custom types")
+				["--custom"]
+				("Custom RTCM3 output types")
+				| lyra::opt(output_filename, "output filename").required()
+				["--output"]
+				("Output RTCM3 filename")
+				| lyra::opt(input_filenames, "input filenames").required()
+				["--input"]
+				("Input RINEX filenames for conversion");
+			
+			const auto result = cli.parse({ argc, argv });
+			if (!result) {
+				std::cout << cli << std::endl;
+				throw std::runtime_error("Error in command line: " + result.errorMessage());
+			}
+
+			if (message_type == OutputMessageType::CustomSet && message_set.empty())
+				throw std::runtime_error("Custom set has been requested, but no message types are provided");
+
+			if (message_type != OutputMessageType::CustomSet)
+				GetOutputMessageSet();
+		}
+		
 	private:
+		void StringToEnum(std::string input) {
+			std::ranges::transform(input, input.begin(), [](auto ch) { return std::tolower(ch); });
+
+			if (std::regex_match(input, std::regex("compact_msm")))
+				message_type = OutputMessageType::CompactMsm;
+			else if (std::regex_match(input, std::regex("full_msm")))
+				message_type = OutputMessageType::FullMsm;
+			else if (std::regex_match(input, std::regex("legacy")))
+				message_type = OutputMessageType::Legacy;
+			else if (std::regex_match(input, std::regex("custom_set")))
+				message_type = OutputMessageType::CustomSet;
+			else
+				throw std::runtime_error("Unexpected message type: " + input);
+		}
+		
 		void GetOutputMessageSet() {
 			switch (message_type) {
 			case OutputMessageType::CompactMsm:
@@ -253,7 +301,7 @@ namespace rinex2rtcm3 {
 				readrnxt(el.string().c_str(), 0, ts, te, 1, prcopt.rnxopt[0], &obs, &nav, &sta);
 		}
 
-		void WriteEphemeris(stream_t* output_stream) {
+		void WriteEphemeris(stream_t* output_stream) const {
 			auto& raw = conversion_stream->raw;
 			auto& nav = raw.nav;
 			conversion_to_write->raw.ephsat = nav.n;
@@ -264,7 +312,7 @@ namespace rinex2rtcm3 {
 				write_nav(gtime_t(), output_stream, conversion_to_write.get());
 			}
 		 }
-		void WriteObservables(stream_t* output_stream) {
+		void WriteObservables(stream_t* output_stream) const {
 			auto& raw = conversion_stream->raw;
 			auto& obs = raw.obs;
 			
@@ -299,8 +347,7 @@ namespace rinex2rtcm3 {
 	public:
 		Converter(const Parameters& p) :
 											parameters(p),
-											message_types_string("1077"),
-											//message_types_string(p.GetTypesString()),
+											message_types_string(p.GetTypesString()),
 											conversion_stream(strconvnew(STRFMT_RINEX, STRFMT_RTCM3, message_types_string.c_str(), 0, 0, prcopt.rnxopt[0])),
 											conversion_to_write(std::make_unique<strconv_t>()) {
 			prcopt.navsys = SYS_ALL;
@@ -309,7 +356,7 @@ namespace rinex2rtcm3 {
 		void Process() {
 			Read();
 
-			auto output_stream = std::unique_ptr<stream_t, decltype(&strclose)>(OpenStream(parameters.output_filename), strclose);
+			const auto output_stream = std::unique_ptr<stream_t, decltype(&strclose)>(OpenStream(parameters.output_filename), strclose);
 			*conversion_to_write = *conversion_stream;
 
 			WriteEphemeris(output_stream.get());
