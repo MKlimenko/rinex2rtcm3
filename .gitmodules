@@ -1,0 +1,4 @@
+[submodule "RTKLIB"]
+	path = RTKLIB
+	url = https://github.com/tomojitakasu/RTKLIB.git
+	branch = rtklib_2.4.3
