@@ -226,11 +226,11 @@ namespace rinex2rtcm3 {
 
 		
 		 auto OpenStream(const std::filesystem::path& path) const {
-			auto dst = std::make_unique<stream_t>();
+			auto dst = new stream_t();
 			int rw = STR_MODE_W;
 
-			if (!stropen(dst.get(), STR_FILE, rw, path.string().c_str())) {
-				strclose(dst.get());
+			if (!stropen(dst, STR_FILE, rw, path.string().c_str())) {
+				strclose(dst);
 				throw std::runtime_error("Unable to open output stream");
 			}
 			return dst;
@@ -256,6 +256,7 @@ namespace rinex2rtcm3 {
 		void WriteEphemeris(stream_t* output_stream) {
 			auto& raw = conversion_stream->raw;
 			auto& nav = raw.nav;
+			conversion_to_write->raw.ephsat = nav.n;
 			for (auto i = 0; i < nav.n; ++i) {
 				conversion_to_write->raw.ephsat = nav.eph[i].sat;
 				conversion_to_write->raw.nav.eph[nav.eph[i].sat - 1] = nav.eph[i];
@@ -263,7 +264,38 @@ namespace rinex2rtcm3 {
 				write_nav(gtime_t(), output_stream, conversion_to_write.get());
 			}
 		 }
-		void WriteObservables(stream_t* output_stream){}
+		void WriteObservables(stream_t* output_stream) {
+			auto& raw = conversion_stream->raw;
+			auto& obs = raw.obs;
+			
+			auto& obs_to_write = conversion_to_write->raw.obs;
+			obs_to_write.n = 0;
+			const auto total_number = obs.n;
+
+			if (!total_number)
+				return;
+
+			auto start_time = obs.data[0].time;
+			
+			for (int i = 0; i < total_number; ++i) {
+				const auto delta_time = timediff(obs.data[i].time, start_time);
+				if (delta_time < std::numeric_limits<double>::epsilon()) {
+					obs_to_write.data[obs_to_write.n++] = obs.data[i];
+				}
+				else {
+					start_time = obs.data[i].time;
+					raw2rtcm(&conversion_to_write->out, &conversion_to_write->raw, 1);
+					write_obs(conversion_to_write->out.time, output_stream, conversion_to_write.get());
+					obs_to_write.n = 0;
+					obs_to_write.data[obs_to_write.n++] = obs.data[i];
+				}
+			}
+			if (obs_to_write.n) {
+				raw2rtcm(&conversion_to_write->out, &conversion_to_write->raw, 1);
+				write_obs(conversion_to_write->out.time, output_stream, conversion_to_write.get());
+			}
+
+		}
 	public:
 		Converter(const Parameters& p) :
 											parameters(p),
@@ -277,12 +309,11 @@ namespace rinex2rtcm3 {
 		void Process() {
 			Read();
 
-			const auto output_stream = OpenStream(parameters.output_filename);
+			auto output_stream = std::unique_ptr<stream_t, decltype(&strclose)>(OpenStream(parameters.output_filename), strclose);
 			*conversion_to_write = *conversion_stream;
 
 			WriteEphemeris(output_stream.get());
 			WriteObservables(output_stream.get());
-			
 		}
 	};
 }
