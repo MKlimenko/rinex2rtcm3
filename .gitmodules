@@ -2,3 +2,6 @@
 	path = RTKLIB
 	url = https://github.com/tomojitakasu/RTKLIB.git
 	branch = rtklib_2.4.3
+[submodule "Lyra"]
+	path = Lyra
+	url = https://github.com/bfgroup/Lyra.git
