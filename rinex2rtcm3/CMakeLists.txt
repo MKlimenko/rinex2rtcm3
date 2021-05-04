@@ -5,6 +5,7 @@ add_executable (rinex2rtcm3
 							rinex2rtcm3.hpp
 							../RTKLIB/src/geoid.c
 							../RTKLIB/src/rcvraw.c
+							../RTKLIB/src/rinex.c
 							../RTKLIB/src/rtcm.c
 							../RTKLIB/src/rtcm2.c
 							../RTKLIB/src/rtcm3.c
@@ -35,3 +36,5 @@ if (WIN32)
 	target_link_libraries(${PROJECT_NAME} winmm ws2_32)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC _SCL_SECURE_NO_WARNINGS _CRT_SECURE_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS WIN32)
 endif (WIN32)
+
+target_compile_definitions(${PROJECT_NAME} PUBLIC TRACE QT ENAGLO ENAGAL ENAQZS ENACMP ENAIRN ENALEO)
