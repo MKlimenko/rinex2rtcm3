@@ -273,8 +273,8 @@ namespace rinex2rtcm3 {
 		}
 
 		
-		 auto OpenStream(const std::filesystem::path& path) const {
-			auto dst = new stream_t();
+		auto OpenStream(const std::filesystem::path& path) const {
+			auto dst = new stream_t;
 			int rw = STR_MODE_W;
 
 			if (!stropen(dst, STR_FILE, rw, path.string().c_str())) {
