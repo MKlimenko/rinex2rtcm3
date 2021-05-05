@@ -206,7 +206,7 @@ namespace rinex2rtcm3 {
 		
 	private:
 		void StringToEnum(std::string input) {
-			std::ranges::transform(input, input.begin(), [](auto ch) { return std::tolower(ch); });
+			std::transform(input.begin(), input.end(), input.begin(), [](auto ch) { return std::tolower(ch); });
 
 			if (std::regex_match(input, std::regex("compact_msm")))
 				message_type = OutputMessageType::CompactMsm;

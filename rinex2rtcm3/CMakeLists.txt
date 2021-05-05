@@ -27,7 +27,7 @@ add_executable (rinex2rtcm3
 							../RTKLIB/src/rcv/ublox.c							
 )
 
-set_property(TARGET rinex2rtcm3 PROPERTY CXX_STANDARD 20)
+set_property(TARGET rinex2rtcm3 PROPERTY CXX_STANDARD 17)
 
 target_include_directories(rinex2rtcm3 PUBLIC ../RTKLIB/src)
 target_include_directories(rinex2rtcm3 PUBLIC ../Lyra/include)
@@ -35,6 +35,8 @@ target_include_directories(rinex2rtcm3 PUBLIC ../Lyra/include)
 if (WIN32)
 	target_link_libraries(${PROJECT_NAME} winmm ws2_32)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC _SCL_SECURE_NO_WARNINGS _CRT_SECURE_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS WIN32)
+else()
+	target_link_libraries(${PROJECT_NAME} pthread)
 endif (WIN32)
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC TRACE QT ENAGLO ENAGAL ENAQZS ENACMP ENAIRN ENALEO)
