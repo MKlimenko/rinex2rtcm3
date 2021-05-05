@@ -1,6 +1,8 @@
 ﻿cmake_minimum_required (VERSION 3.8)
 
-add_executable (rinex2rtcm3 
+project(rinex2rtcm3)
+
+add_executable (${PROJECT_NAME} 
 							rinex2rtcm3.cpp 
 							rinex2rtcm3.hpp
 							../RTKLIB/src/geoid.c
@@ -27,10 +29,10 @@ add_executable (rinex2rtcm3
 							../RTKLIB/src/rcv/ublox.c							
 )
 
-set_property(TARGET rinex2rtcm3 PROPERTY CXX_STANDARD 17)
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
 
-target_include_directories(rinex2rtcm3 PUBLIC ../RTKLIB/src)
-target_include_directories(rinex2rtcm3 PUBLIC ../Lyra/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ../RTKLIB/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ../Lyra/include)
 
 if (WIN32)
 	target_link_libraries(${PROJECT_NAME} winmm ws2_32)

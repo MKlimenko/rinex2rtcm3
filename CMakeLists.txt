@@ -1,8 +1,10 @@
 ﻿cmake_minimum_required (VERSION 3.8)
 
-project ("rinex2rtcm3")
+project (rinex2rtcm3_root)
 
+enable_testing()
 add_subdirectory ("rinex2rtcm3")
+add_subdirectory ("rinex2rtcm3_test")
 
 find_package(Git QUIET)
 if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
