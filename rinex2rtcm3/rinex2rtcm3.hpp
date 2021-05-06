@@ -300,13 +300,15 @@ namespace rinex2rtcm3 {
 				readrnxt(el.string().c_str(), 0, ts, te, 1, prcopt.rnxopt[0], &obs, &nav, &sta);
 		}
 
-		void WriteEphemeris(stream_t* output_stream) const {
+		auto WriteEphemeris(stream_t* output_stream) const {
 			auto& raw = conversion_stream->raw;
 			auto& nav = raw.nav;
 
-			auto convert_and_write = [this, &output_stream]() {
+			auto number_of_messages = 0;
+			auto convert_and_write = [this, &output_stream, &number_of_messages]() {
 				raw2rtcm(&conversion_stream->out, &conversion_stream->raw, 2);
 				write_nav(gtime_t(), output_stream, conversion_stream.get());
+				++number_of_messages;
 			};
 			
 			uniqnav(&nav);
@@ -318,10 +320,9 @@ namespace rinex2rtcm3 {
 			glonass_ephemeris_copy.reserve(nav.ng);
 			std::copy(nav.geph, nav.geph + nav.ng, std::back_inserter(glonass_ephemeris_copy));
 			
-			conversion_stream->raw.ephsat = nav.n;
 			for (auto i = 0; i < nav.n; ++i) {
-				conversion_stream->raw.ephsat = nav.eph[i].sat;
-				conversion_stream->raw.nav.eph[nav.eph[i].sat - 1] = ephemeris_copy[i];
+				conversion_stream->raw.ephsat = ephemeris_copy[i].sat;
+				conversion_stream->raw.nav.eph[ephemeris_copy[i].sat - 1] = ephemeris_copy[i];
 				convert_and_write();
 			}
 			for (auto i = 0; i < nav.ng; ++i) {
@@ -331,8 +332,10 @@ namespace rinex2rtcm3 {
 				conversion_stream->raw.nav.geph[prn - 1] = glonass_ephemeris_copy[i];
 				convert_and_write();
 			}
+
+			return number_of_messages;
 		 }
-		void WriteObservables(stream_t* output_stream) const {
+		auto WriteObservables(stream_t* output_stream) const {
 			auto& raw = conversion_stream->raw;
 			auto& obs = raw.obs;
 			auto& out = conversion_stream->out;
@@ -346,10 +349,11 @@ namespace rinex2rtcm3 {
 			obs.n = 0;
 
 			if (!total_number)
-				return;
+				return 0;
 
 			auto start_time = obs.data[0].time;
-			
+
+			auto number_of_messages = 0;
 			for (int i = 0; i < total_number; ++i) {
 				const auto delta_time = timediff(obs.data[i].time, start_time);
 				if (delta_time < std::numeric_limits<double>::epsilon()) {
@@ -359,6 +363,7 @@ namespace rinex2rtcm3 {
 					start_time = obs.data[i].time;
 					raw2rtcm(&out, &raw, 1);
 					write_obs(out.time, output_stream, conversion_stream.get());
+					++number_of_messages;
 					obs.n = 0;
 					obs.data[obs.n++] = observables_copy[i];
 				}
@@ -366,7 +371,10 @@ namespace rinex2rtcm3 {
 			if (obs.n) {
 				raw2rtcm(&out, &raw, 1);
 				write_obs(out.time, output_stream, conversion_stream.get());
+				++number_of_messages;
 			}
+
+			return number_of_messages;
 		}
 		
 	public:
@@ -377,13 +385,15 @@ namespace rinex2rtcm3 {
 			prcopt.navsys = SYS_ALL;
 		}
 
-		void Process() const {
+		auto Process() const {
 			Read();
 						
 			const auto output_stream = std::unique_ptr<stream_t, decltype(&strclose)>(OpenStream(parameters.output_filename), strclose);
 
-			WriteEphemeris(output_stream.get());
-			WriteObservables(output_stream.get());
+			auto number_of_messages = WriteEphemeris(output_stream.get());
+			number_of_messages += WriteObservables(output_stream.get());
+
+			return number_of_messages;
 		}
 	};
 }

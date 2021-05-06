@@ -1,6 +1,9 @@
 ﻿#include "gtest/gtest.h"
 #include "rinex2rtcm3.hpp"
 
+#include <fstream>
+#include <numeric>
+
 namespace {
 	auto GetParameters(const std::vector<std::string>& arguments_string) {
 		std::vector<char*> arguments;
@@ -9,7 +12,35 @@ namespace {
 		return rinex2rtcm3::Parameters(static_cast<int>(arguments.size()), arguments.data());
 	}
 
-	
+	auto ProcessRinex() {
+		std::vector<std::string> arguments_string{
+			"",
+			"--input",
+			absolute(std::filesystem::path(TEST_PATH + std::string("07590920.*"))).string(),
+			"--output",
+			"output_file.rtcm3",
+			"--type",
+			"legacy"
+		};
+		auto parameters = GetParameters(arguments_string);
+
+		auto converter = rinex2rtcm3::Converter(parameters);
+		return converter.Process();
+	}
+
+	auto GetRtcmInfo() {
+		auto rtcm = std::unique_ptr<rtcm_t, decltype(&free_rtcm)>(new rtcm_t, free_rtcm);
+		init_rtcm(rtcm.get());
+		std::string keep_ephemeris = "-EPHALL";
+		std::copy(keep_ephemeris.begin(), keep_ephemeris.end(), rtcm->opt);
+		auto file_pointer = std::unique_ptr<FILE, decltype(&fclose)>(fopen("output_file.rtcm3", "rb"), fclose);
+
+		auto number_of_messages = 0;
+		while (input_rtcm3f(rtcm.get(), file_pointer.get()) != -2)
+			++number_of_messages;
+
+		return std::make_pair(std::move(rtcm), number_of_messages);
+	}
 }
 
 namespace argument_parsing {
@@ -162,21 +193,9 @@ namespace argument_parsing {
 	}
 }
 TEST(message_set_verification, legacy) {
-	std::vector<std::string> arguments_string{
-		"",
-		"--input",
-		TEST_PATH + std::string("07590920.*"),
-		"--output",
-		"output_file.rtcm3",
-		"--type",
-		"legacy"
-	};
-	auto parameters = GetParameters(arguments_string);;
-
-	ASSERT_EQ(arguments_string[2], parameters.input_filenames[0]);
-	ASSERT_EQ(arguments_string[4], parameters.output_filename);
-	ASSERT_EQ(parameters.message_type, rinex2rtcm3::Parameters::OutputMessageType::Legacy);
+	const auto messages_written = ProcessRinex();
 	
-	auto converter = rinex2rtcm3::Converter(parameters);
-	converter.Process();
+	auto [rtcm, number_of_messages] = GetRtcmInfo();
+
+	ASSERT_EQ(messages_written, number_of_messages);
 }
