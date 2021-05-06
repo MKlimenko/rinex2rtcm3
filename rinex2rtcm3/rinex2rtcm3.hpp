@@ -304,10 +304,19 @@ namespace rinex2rtcm3 {
 		void WriteEphemeris(stream_t* output_stream) const {
 			auto& raw = conversion_stream->raw;
 			auto& nav = raw.nav;
+			uniqnav(&nav);
 			conversion_to_write->raw.ephsat = nav.n;
 			for (auto i = 0; i < nav.n; ++i) {
 				conversion_to_write->raw.ephsat = nav.eph[i].sat;
 				conversion_to_write->raw.nav.eph[nav.eph[i].sat - 1] = nav.eph[i];
+				raw2rtcm(&conversion_to_write->out, &conversion_to_write->raw, 2);
+				write_nav(gtime_t(), output_stream, conversion_to_write.get());
+			}
+			for (auto i = 0; i < nav.ng; ++i) {
+				conversion_to_write->raw.ephsat = nav.geph[i].sat;
+				int prn = 0;
+				satsys(conversion_to_write->raw.ephsat, &prn);
+				conversion_to_write->raw.nav.geph[prn - 1] = nav.geph[i];
 				raw2rtcm(&conversion_to_write->out, &conversion_to_write->raw, 2);
 				write_nav(gtime_t(), output_stream, conversion_to_write.get());
 			}
