@@ -366,7 +366,7 @@ namespace rinex2rtcm3 {
 			prcopt.navsys = SYS_ALL;
 		}
 
-		void Process() {
+		void Process() const {
 			Read();
 						
 			const auto output_stream = std::unique_ptr<stream_t, decltype(&strclose)>(OpenStream(parameters.output_filename), strclose);
