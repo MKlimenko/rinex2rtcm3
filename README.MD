@@ -26,7 +26,7 @@ rinex2rtcm3 is based on RTKLIB for the GNSS-related stuff and Lyra (ex-Clara, my
 ## Future work
 
 - [x] Verify build on several platforms
-- [ ] Add tests
-- [ ] Add CI (Travis?)
+- [x] Add tests (WIP)
+- [x] Add CI
 - [ ] Tune the CLI
 - [ ] Make the file more stream-friendly for long files (interleave ephemeris and observables)

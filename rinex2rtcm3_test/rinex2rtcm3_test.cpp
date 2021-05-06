@@ -162,5 +162,21 @@ namespace argument_parsing {
 	}
 }
 TEST(message_set_verification, legacy) {
-	ASSERT_TRUE(1);
+	std::vector<std::string> arguments_string{
+		"",
+		"--input",
+		TEST_PATH + std::string("07590920.*"),
+		"--output",
+		"output_file.rtcm3",
+		"--type",
+		"legacy"
+	};
+	auto parameters = GetParameters(arguments_string);;
+
+	ASSERT_EQ(arguments_string[2], parameters.input_filenames[0]);
+	ASSERT_EQ(arguments_string[4], parameters.output_filename);
+	ASSERT_EQ(parameters.message_type, rinex2rtcm3::Parameters::OutputMessageType::Legacy);
+	
+	auto converter = rinex2rtcm3::Converter(parameters);
+	converter.Process();
 }

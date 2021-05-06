@@ -65,6 +65,7 @@ endif (WIN32)
 
 target_link_libraries(${PROJECT_NAME} gtest_main)
 target_compile_definitions(${PROJECT_NAME} PUBLIC TRACE QT ENAGLO ENAGAL ENAQZS ENACMP ENAIRN ENALEO)
+add_definitions(-DTEST_PATH="${CMAKE_CURRENT_LIST_DIR}/../RTKLIB/test/data/rinex/")
 
 enable_testing()
 add_test(NAME rinex2rtcm3_test COMMAND rinex2rtcm3_test)
