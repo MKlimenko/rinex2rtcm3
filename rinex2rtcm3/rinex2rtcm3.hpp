@@ -242,8 +242,8 @@ namespace rinex2rtcm3 {
 		const Parameters& parameters;
 		prcopt_t prcopt = prcopt_default;
 		std::string message_types_string;
-		std::unique_ptr<strconv_t> conversion_stream;
-		std::unique_ptr<strconv_t> conversion_to_write;
+		std::unique_ptr<strconv_t, decltype(&strconvfree)> conversion_stream;
+		std::unique_ptr<strconv_t, decltype(&strconvfree)> conversion_to_write;
 
 		/* copy received data from receiver raw to rtcm ------------------------------*/
 		static void raw2rtcm(rtcm_t* out, const raw_t* raw, int ret) {
@@ -304,21 +304,25 @@ namespace rinex2rtcm3 {
 		void WriteEphemeris(stream_t* output_stream) const {
 			auto& raw = conversion_stream->raw;
 			auto& nav = raw.nav;
+
+			auto convert_and_write = [this, &output_stream]() {
+				raw2rtcm(&conversion_to_write->out, &conversion_to_write->raw, 2);
+				write_nav(gtime_t(), output_stream, conversion_to_write.get());
+			};
+			
 			uniqnav(&nav);
 			conversion_to_write->raw.ephsat = nav.n;
 			for (auto i = 0; i < nav.n; ++i) {
 				conversion_to_write->raw.ephsat = nav.eph[i].sat;
 				conversion_to_write->raw.nav.eph[nav.eph[i].sat - 1] = nav.eph[i];
-				raw2rtcm(&conversion_to_write->out, &conversion_to_write->raw, 2);
-				write_nav(gtime_t(), output_stream, conversion_to_write.get());
+				convert_and_write();
 			}
 			for (auto i = 0; i < nav.ng; ++i) {
 				conversion_to_write->raw.ephsat = nav.geph[i].sat;
 				int prn = 0;
 				satsys(conversion_to_write->raw.ephsat, &prn);
 				conversion_to_write->raw.nav.geph[prn - 1] = nav.geph[i];
-				raw2rtcm(&conversion_to_write->out, &conversion_to_write->raw, 2);
-				write_nav(gtime_t(), output_stream, conversion_to_write.get());
+				convert_and_write();
 			}
 		 }
 		void WriteObservables(stream_t* output_stream) const {
@@ -357,14 +361,14 @@ namespace rinex2rtcm3 {
 		Converter(const Parameters& p) :
 											parameters(p),
 											message_types_string(p.GetTypesString()),
-											conversion_stream(strconvnew(STRFMT_RINEX, STRFMT_RTCM3, message_types_string.c_str(), 0, 0, prcopt.rnxopt[0])),
-											conversion_to_write(std::make_unique<strconv_t>()) {
+											conversion_stream(std::unique_ptr<strconv_t, decltype(&strconvfree)>(strconvnew(STRFMT_RINEX, STRFMT_RTCM3, message_types_string.c_str(), 0, 0, prcopt.rnxopt[0]), strconvfree)),
+											conversion_to_write(std::unique_ptr<strconv_t, decltype(&strconvfree)>(new strconv_t, strconvfree)) {
 			prcopt.navsys = SYS_ALL;
 		}
 
 		void Process() {
 			Read();
-
+						
 			const auto output_stream = std::unique_ptr<stream_t, decltype(&strclose)>(OpenStream(parameters.output_filename), strclose);
 			*conversion_to_write = *conversion_stream;
 
