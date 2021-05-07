@@ -3,7 +3,9 @@
 #include "lyra/lyra.hpp"
 #include "rtklib.h"
 
+#include <deque>
 #include <filesystem>
+#include <map>
 #include <regex>
 #include <vector>
 
@@ -244,37 +246,42 @@ namespace rinex2rtcm3 {
 		std::string message_types_string;
 		std::unique_ptr<strconv_t, decltype(&strconvfree)> conversion_stream;
 
+		std::map<std::size_t, std::deque<eph_t>> ephemeris_copy;
+		std::map<std::size_t, std::deque<geph_t>> glonass_ephemeris_copy;
+
 		/* copy received data from receiver raw to rtcm ------------------------------*/
 		static void raw2rtcm(rtcm_t* out, const raw_t* raw, int ret) {
 			out->time = raw->time;
-			int i, sat, prn;
 
 			if (ret == 1) {
-				for (int i = 0; i < raw->obs.n; i++) {
+				for (auto i = 0; i < raw->obs.n; i++) {
 					out->time = raw->obs.data[i].time;
 					out->obs.data[i] = raw->obs.data[i];
 				}
 				out->obs.n = raw->obs.n;
 			}
 			else if (ret == 2) {
-				sat = raw->ephsat;
+				const auto sat = raw->ephsat;
+				int prn = 0;
 				switch (satsys(sat, &prn)) {
-				case SYS_GLO: out->nav.geph[prn - 1] = raw->nav.geph[prn - 1]; break;
+				case SYS_GLO:
+					out->nav.geph[prn - 1] = raw->nav.geph[prn - 1]; break;
 				case SYS_GPS:
 				case SYS_GAL:
 				case SYS_QZS:
 				case SYS_CMP:
 				case SYS_IRN:
 					out->nav.eph[sat - 1] = raw->nav.eph[sat - 1]; break;
+				default:
+					throw  std::runtime_error("Unexpected satellite system");
 				}
 				out->ephsat = sat;
 			}
 		}
 
-		
-		auto OpenStream(const std::filesystem::path& path) const {
-			auto dst = new stream_t;
-			int rw = STR_MODE_W;
+		static auto OpenStream(const std::filesystem::path& path) {
+			const auto dst = new stream_t;
+			const int rw = STR_MODE_W;
 
 			if (!stropen(dst, STR_FILE, rw, path.string().c_str())) {
 				strclose(dst);
@@ -286,18 +293,16 @@ namespace rinex2rtcm3 {
 		void Read() const {
 			auto& raw = conversion_stream->raw;
 
-			gtime_t ts{};
-			gtime_t te{};
-			obs_t& obs = raw.obs;
+			auto& obs = raw.obs;
 			auto& nav = raw.nav;
-			sta_t& sta = raw.sta;
-			obs.data = nullptr;	obs.n = obs.nmax = 0;
-			nav.eph = nullptr;	nav.n = nav.nmax = 0;
+			auto& sta = raw.sta;
+			obs.data = nullptr;	obs.n  = obs.nmax  = 0;
+			nav.eph = nullptr;	nav.n  = nav.nmax  = 0;
 			nav.geph = nullptr;	nav.ng = nav.ngmax = 0;
 			nav.seph = nullptr;	nav.ns = nav.nsmax = 0;
 
 			for(auto& el : parameters.input_filenames)
-				readrnxt(el.string().c_str(), 0, ts, te, 1, prcopt.rnxopt[0], &obs, &nav, &sta);
+				readrnxt(el.string().c_str(), 0, gtime_t(), gtime_t(), 1, prcopt.rnxopt[0], &raw.obs, &raw.nav, &raw.sta);
 		}
 
 		auto WriteEphemeris(stream_t* output_stream) const {
@@ -376,6 +381,106 @@ namespace rinex2rtcm3 {
 
 			return number_of_messages;
 		}
+
+		void PrepareEphemeris() {
+			auto& raw = conversion_stream->raw;
+			auto& nav = raw.nav;
+
+			uniqnav(&nav);
+
+			for(int i = 0; i < nav.n; ++i) 
+				ephemeris_copy[nav.eph[i].sat].push_back(nav.eph[i]);
+			for (int i = 0; i < nav.ng; ++i) 
+				glonass_ephemeris_copy[nav.geph[i].sat].push_back(nav.geph[i]);
+		}
+
+		void EraseStaleEphemeris(gtime_t time_of_last_obs) {
+			auto erase = [](auto&current_map, auto predicate) {
+				for (auto& entry : current_map) {
+					auto& sv_entry = entry.second;
+					auto it = std::find_if(sv_entry.rbegin(), sv_entry.rend(), predicate);
+
+					if (it != sv_entry.rend())
+						sv_entry.erase(sv_entry.begin(), (it + 1).base());
+				}				
+			};
+
+			erase(ephemeris_copy, [&time_of_last_obs](eph_t& val) {
+				return timediff(val.ttr, time_of_last_obs) < 0;
+			});
+			erase(glonass_ephemeris_copy, [&time_of_last_obs](geph_t& val) {
+				return timediff(val.tof, time_of_last_obs) < 0;
+			});
+		}
+		
+		auto WriteEphemeris(gtime_t time_of_last_obs, stream_t* output_stream) {
+			auto& raw = conversion_stream->raw;
+			auto& nav = raw.nav;
+
+			auto number_of_messages = 0;
+			auto convert_and_write = [this, &output_stream, &number_of_messages, &raw]() {
+				raw2rtcm(&conversion_stream->out, &raw, 2);
+				write_nav(gtime_t(), output_stream, conversion_stream.get());
+				++number_of_messages;
+			};
+			
+			EraseStaleEphemeris(time_of_last_obs);
+			auto iterate = [&raw, &convert_and_write](auto& map_to_iterate, auto& ephemeris_array) {
+				for (auto& entry : map_to_iterate) {
+					raw.ephsat = static_cast<int>(entry.first);
+					ephemeris_array[entry.first - 1] = entry.second[0];
+					convert_and_write();
+				}
+			};
+
+			iterate(ephemeris_copy, nav.eph);
+			iterate(glonass_ephemeris_copy, nav.geph);
+
+			return number_of_messages;
+		}
+		
+		auto WriteInterleaved(stream_t* output_stream) {
+			auto& raw = conversion_stream->raw;
+			auto& obs = raw.obs;
+			auto& out = conversion_stream->out;
+
+			sortobs(&obs);
+
+			const auto total_number = obs.n;
+			std::vector<obsd_t> observables_copy;
+			observables_copy.reserve(total_number);
+			std::copy(raw.obs.data, raw.obs.data + total_number, std::back_inserter(observables_copy));
+			obs.n = 0;
+
+			if (!total_number)
+				return 0;
+
+			auto start_time = obs.data[0].time;
+
+			auto number_of_messages = 0;
+			for (int i = 0; i < total_number; ++i) {
+				const auto delta_time = timediff(obs.data[i].time, start_time);
+				if (delta_time < std::numeric_limits<double>::epsilon()) {
+					obs.data[obs.n++] = observables_copy[i];
+				}
+				else {
+					number_of_messages += WriteEphemeris(start_time, output_stream);
+					start_time = obs.data[i].time;
+					raw2rtcm(&out, &raw, 1);
+					write_obs(out.time, output_stream, conversion_stream.get());
+					++number_of_messages;
+					obs.n = 0;
+					obs.data[obs.n++] = observables_copy[i];
+				}
+			}
+			if (obs.n) {
+				raw2rtcm(&out, &raw, 1);
+				write_obs(out.time, output_stream, conversion_stream.get());
+				++number_of_messages;
+			}
+
+			return number_of_messages;
+		}
 		
 	public:
 		Converter(const Parameters& p) :
@@ -385,13 +490,13 @@ namespace rinex2rtcm3 {
 			prcopt.navsys = SYS_ALL;
 		}
 
-		auto Process() const {
+		auto Process()  {
 			Read();
 						
 			const auto output_stream = std::unique_ptr<stream_t, decltype(&strclose)>(OpenStream(parameters.output_filename), strclose);
 
-			auto number_of_messages = WriteEphemeris(output_stream.get());
-			number_of_messages += WriteObservables(output_stream.get());
+			PrepareEphemeris();
+			const auto number_of_messages = WriteInterleaved(output_stream.get());
 
 			return number_of_messages;
 		}
