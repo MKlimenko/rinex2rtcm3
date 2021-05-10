@@ -246,8 +246,10 @@ namespace rinex2rtcm3 {
 		std::string message_types_string;
 		std::unique_ptr<strconv_t, decltype(&strconvfree)> conversion_stream;
 
-		std::map<std::size_t, std::deque<eph_t>> ephemeris_copy;
-		std::map<std::size_t, std::deque<geph_t>> glonass_ephemeris_copy;
+		std::deque<eph_t> ephemeris_copy;
+		std::deque<geph_t> glonass_ephemeris_copy;
+		std::vector<eph_t> current_ephemeris_batch;
+		std::vector<geph_t> current_glonass_ephemeris_batch;
 
 		/* copy received data from receiver raw to rtcm ------------------------------*/
 		static void raw2rtcm(rtcm_t* out, const raw_t* raw, int ret) {
@@ -389,20 +391,15 @@ namespace rinex2rtcm3 {
 			uniqnav(&nav);
 
 			for(int i = 0; i < nav.n; ++i) 
-				ephemeris_copy[nav.eph[i].sat].push_back(nav.eph[i]);
+				ephemeris_copy.push_back(nav.eph[i]);
 			for (int i = 0; i < nav.ng; ++i) 
-				glonass_ephemeris_copy[nav.geph[i].sat].push_back(nav.geph[i]);
+				glonass_ephemeris_copy.push_back(nav.geph[i]);
 		}
 
 		void EraseStaleEphemeris(gtime_t time_of_last_obs) {
-			auto erase = [](auto&current_map, auto predicate) {
-				for (auto& entry : current_map) {
-					auto& sv_entry = entry.second;
-					auto it = std::find_if(sv_entry.rbegin(), sv_entry.rend(), predicate);
-
-					if (it != sv_entry.rend())
-						sv_entry.erase(sv_entry.begin(), (it + 1).base());
-				}				
+			auto erase = [](auto&current_vec, auto predicate) {
+				auto current_epoch_it = std::find_if(current_vec.begin(), current_vec.end(), predicate);
+				current_vec.erase(current_vec.begin(), current_epoch_it);
 			};
 
 			erase(ephemeris_copy, [&time_of_last_obs](eph_t& val) {
@@ -425,16 +422,6 @@ namespace rinex2rtcm3 {
 			};
 			
 			EraseStaleEphemeris(time_of_last_obs);
-			auto iterate = [&raw, &convert_and_write](auto& map_to_iterate, auto& ephemeris_array) {
-				for (auto& entry : map_to_iterate) {
-					raw.ephsat = static_cast<int>(entry.first);
-					ephemeris_array[entry.first - 1] = entry.second[0];
-					convert_and_write();
-				}
-			};
-
-			iterate(ephemeris_copy, nav.eph);
-			iterate(glonass_ephemeris_copy, nav.geph);
 
 			return number_of_messages;
 		}
