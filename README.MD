@@ -2,7 +2,7 @@
 
 A small RTKLIB-based tool to convert arbitrary number of RINEX files into single RTCMv3 file.
 
-```rinex2rtcm3 [-?|-h|--help] --type <messages type> [--custom <custom types>] --output <output filename> --input <input filenames>```
+```rinex2rtcm3 [-?|-h|--help] [--interleave] --type <messages type> [--custom <custom types>] --output <output filename> --input <input filenames>```
 
 ## Background
 
@@ -22,11 +22,12 @@ rinex2rtcm3 is based on RTKLIB for the GNSS-related stuff and Lyra (ex-Clara, my
 3. ```--custom``` adds *one* message type for conversion. For multiple argument this command should be repeated _N_ times
 4. ```--output``` selects the file of the destination RTCMv3 data file
 5. ```--input``` selects *one* file as an input. For multiple file this argument should be repeated _N_ times.
+6. ```--interleave``` forces the stream to interleave ephemeris and observable messages. Every epoch the most recent ephemeris would be repeated.
 
 ## Future work
 
 - [x] Verify build on several platforms
 - [x] Add tests (WIP)
 - [x] Add CI
+- [x] Make the file more stream-friendly for long files (interleave ephemeris and observables)
 - [ ] Tune the CLI
-- [ ] Make the file more stream-friendly for long files (interleave ephemeris and observables)
