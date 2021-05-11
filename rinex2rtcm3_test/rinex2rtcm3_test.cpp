@@ -12,7 +12,7 @@ namespace {
 		return rinex2rtcm3::Parameters(static_cast<int>(arguments.size()), arguments.data());
 	}
 
-	auto ProcessRinex() {
+	auto ProcessRinex(rinex2rtcm3::Parameters::OutputMessageType type) {
 		std::vector<std::string> arguments_string{
 			"",
 			"--input",
@@ -20,9 +20,25 @@ namespace {
 			"--output",
 			"output_file.rtcm3",
 			"--type",
-			"legacy"
 		};
-		auto parameters = GetParameters(arguments_string);
+
+		switch (type) {
+		case rinex2rtcm3::Parameters::OutputMessageType::CompactMsm:
+			arguments_string.emplace_back("compact_msm");
+			break;
+		case rinex2rtcm3::Parameters::OutputMessageType::FullMsm:
+			arguments_string.emplace_back("full_msm");
+			break;
+		case rinex2rtcm3::Parameters::OutputMessageType::Legacy:
+			arguments_string.emplace_back("legacy");
+			break;
+		case rinex2rtcm3::Parameters::OutputMessageType::CustomSet:
+			break;
+		default:
+			break;
+		}
+
+		const auto parameters = GetParameters(arguments_string);
 
 		auto converter = rinex2rtcm3::Converter(parameters);
 		return converter.Process();
@@ -40,6 +56,19 @@ namespace {
 			++number_of_messages;
 
 		return std::make_pair(std::move(rtcm), number_of_messages);
+	}
+
+	void MessageSetVerificationHelper(rinex2rtcm3::Parameters::OutputMessageType current_type) {
+		const auto messages_written = ProcessRinex(current_type);
+
+		auto [rtcm, number_of_messages] = GetRtcmInfo();
+
+		ASSERT_EQ(messages_written, number_of_messages);
+
+		std::set<std::size_t> message_types_in_output;
+		for (std::size_t i = 0; i < std::size(rtcm->nmsg3); ++i)
+			if (rtcm->nmsg3[i])
+				message_types_in_output.emplace(1000 + i);		
 	}
 }
 
@@ -220,9 +249,11 @@ namespace argument_parsing {
 	}
 }
 TEST(message_set_verification, legacy) {
-	const auto messages_written = ProcessRinex();
-	
-	auto [rtcm, number_of_messages] = GetRtcmInfo();
-
-	ASSERT_EQ(messages_written, number_of_messages);
+	MessageSetVerificationHelper(rinex2rtcm3::Parameters::OutputMessageType::Legacy);
+}
+TEST(message_set_verification, compact_msm) {
+	MessageSetVerificationHelper(rinex2rtcm3::Parameters::OutputMessageType::CompactMsm);
+}
+TEST(message_set_verification, full_msm) {
+	MessageSetVerificationHelper(rinex2rtcm3::Parameters::OutputMessageType::FullMsm);
 }
