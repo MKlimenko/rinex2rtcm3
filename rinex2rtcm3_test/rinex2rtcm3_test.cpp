@@ -62,6 +62,7 @@ namespace argument_parsing {
 		ASSERT_EQ(arguments_string[4], parameters.input_filenames[1]);
 		ASSERT_EQ(arguments_string[6], parameters.output_filename);
 		ASSERT_EQ(parameters.message_type, rinex2rtcm3::Parameters::OutputMessageType::Legacy);
+		ASSERT_FALSE(parameters.interleaved);
 	}
 
 	TEST(argument_parsing, compact_msm) {
@@ -82,6 +83,7 @@ namespace argument_parsing {
 		ASSERT_EQ(arguments_string[4], parameters.input_filenames[1]);
 		ASSERT_EQ(arguments_string[6], parameters.output_filename);
 		ASSERT_EQ(parameters.message_type, rinex2rtcm3::Parameters::OutputMessageType::CompactMsm);
+		ASSERT_FALSE(parameters.interleaved);
 	}
 
 	TEST(argument_parsing, full_msm) {
@@ -102,6 +104,7 @@ namespace argument_parsing {
 		ASSERT_EQ(arguments_string[4], parameters.input_filenames[1]);
 		ASSERT_EQ(arguments_string[6], parameters.output_filename);
 		ASSERT_EQ(parameters.message_type, rinex2rtcm3::Parameters::OutputMessageType::FullMsm);
+		ASSERT_FALSE(parameters.interleaved);
 	}
 
 	TEST(argument_parsing, custom_set) {
@@ -129,7 +132,31 @@ namespace argument_parsing {
 		ASSERT_EQ(arguments_string[6], parameters.output_filename);
 		ASSERT_EQ(parameters.message_type, rinex2rtcm3::Parameters::OutputMessageType::CustomSet);
 		ASSERT_EQ(parameters.message_set, (std::vector<std::size_t>{ 1, 2, 3 }));
+		ASSERT_FALSE(parameters.interleaved);
 	}
+
+	TEST(argument_parsing, input_interleaved) {
+		std::vector<std::string> arguments_string{
+			"",
+			"--input",
+			"input_file.obs",
+			"--input",
+			"input_file.nav",
+			"--output",
+			"output_file.rtcm3",
+			"--type",
+			"legacy",
+			"--interleave",
+		};
+		auto parameters = GetParameters(arguments_string);;
+
+		ASSERT_EQ(arguments_string[2], parameters.input_filenames[0]);
+		ASSERT_EQ(arguments_string[4], parameters.input_filenames[1]);
+		ASSERT_EQ(arguments_string[6], parameters.output_filename);
+		ASSERT_EQ(parameters.message_type, rinex2rtcm3::Parameters::OutputMessageType::Legacy);
+		ASSERT_TRUE(parameters.interleaved);
+	}
+
 
 	TEST(argument_parsing, no_input) {
 		std::vector<std::string> arguments_string{

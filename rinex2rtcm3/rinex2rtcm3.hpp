@@ -164,6 +164,7 @@ namespace rinex2rtcm3 {
 		std::filesystem::path output_filename;
 		OutputMessageType message_type = OutputMessageType::CompactMsm;
 		std::vector<std::size_t> message_set;
+		bool interleaved = false;
 
 		auto GetTypesString() const {
 			std::string dst;
@@ -178,8 +179,12 @@ namespace rinex2rtcm3 {
 
 		Parameters(int argc, char** argv) {
 			bool show_help = false;
+
 			auto cli = 
 				lyra::help(show_help)
+				| lyra::opt(interleaved)
+				["--interleave"]
+				("Interleave ephemeris and observables for pseudo-realtime stream")
 				| lyra::opt([&](std::string type_string) { StringToEnum(std::move(type_string)); }, "messages type")
 				["--type"]
 				("Message types to output").required()
@@ -397,16 +402,21 @@ namespace rinex2rtcm3 {
 		}
 
 		void EraseStaleEphemeris(gtime_t time_of_last_obs) {
-			auto erase = [](auto&current_vec, auto predicate) {
-				auto current_epoch_it = std::find_if(current_vec.begin(), current_vec.end(), predicate);
-				current_vec.erase(current_vec.begin(), current_epoch_it);
+			auto erase = [](auto& current_vec, auto& current_batch, auto predicate) {
+				auto next_batch = std::find_if(current_vec.begin(), current_vec.end(), predicate);
+
+				if (next_batch != current_vec.begin()) {
+					current_batch.clear();
+					std::copy(current_vec.begin(), next_batch, std::back_inserter(current_batch));
+					current_vec.erase(current_vec.begin(), next_batch);
+				}
 			};
 
-			erase(ephemeris_copy, [&time_of_last_obs](eph_t& val) {
-				return timediff(val.ttr, time_of_last_obs) < 0;
+			erase(ephemeris_copy, current_ephemeris_batch, [&time_of_last_obs](eph_t& val) {
+				return timediff(val.ttr, time_of_last_obs) > 0;
 			});
-			erase(glonass_ephemeris_copy, [&time_of_last_obs](geph_t& val) {
-				return timediff(val.tof, time_of_last_obs) < 0;
+			erase(glonass_ephemeris_copy, current_glonass_ephemeris_batch, [&time_of_last_obs](geph_t& val) {
+				return timediff(val.tof, time_of_last_obs) > 0;
 			});
 		}
 		
@@ -422,6 +432,16 @@ namespace rinex2rtcm3 {
 			};
 			
 			EraseStaleEphemeris(time_of_last_obs);
+			auto iterate = [&raw, &convert_and_write](auto& current_batch, auto& ephemeris_array) {
+				for (std::size_t i = 0; i < current_batch.size(); ++i) {
+					raw.ephsat = current_batch[i].sat;
+					ephemeris_array[raw.ephsat - 1] = current_batch[i];
+					convert_and_write();
+				}
+			};
+
+			iterate(current_ephemeris_batch, nav.eph);
+			iterate(current_glonass_ephemeris_batch, nav.geph);
 
 			return number_of_messages;
 		}
@@ -461,6 +481,7 @@ namespace rinex2rtcm3 {
 				}
 			}
 			if (obs.n) {
+				number_of_messages += WriteEphemeris(start_time, output_stream);
 				raw2rtcm(&out, &raw, 1);
 				write_obs(out.time, output_stream, conversion_stream.get());
 				++number_of_messages;
@@ -483,8 +504,14 @@ namespace rinex2rtcm3 {
 			const auto output_stream = std::unique_ptr<stream_t, decltype(&strclose)>(OpenStream(parameters.output_filename), strclose);
 
 			PrepareEphemeris();
-			const auto number_of_messages = WriteInterleaved(output_stream.get());
-
+			auto number_of_messages = 0;
+			if (!parameters.interleaved) {
+				number_of_messages = WriteEphemeris(output_stream.get());
+				number_of_messages += WriteInterleaved(output_stream.get());
+			}
+			else 
+				number_of_messages = WriteInterleaved(output_stream.get());
+			
 			return number_of_messages;
 		}
 	};
